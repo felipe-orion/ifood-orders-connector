@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="card">
+    <form method="get" action="/panel/orders" class="filters">
+        <input type="text" name="q" placeholder="Buscar ifood_order_id" value="{{ filters.q }}">
+        <select name="status">
+            <option value="">Todos os status</option>
+            {% for item in available_statuses %}
+            <option value="{{ item }}" {% if filters.status == item %}selected{% endif %}>{{ item }}</option>
+            {% endfor %}
+        </select>
+        <select name="order_type">
+            <option value="">Todos os tipos</option>
+            {% for item in available_types %}
+            <option value="{{ item }}" {% if filters.order_type == item %}selected{% endif %}>{{ item }}</option>
+            {% endfor %}
+        </select>
+        <select name="limit">
+            {% for value in [25, 50, 100, 200] %}
+            <option value="{{ value }}" {% if filters.limit == value %}selected{% endif %}>{{ value }} registros</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="button primary">Aplicar</button>
+    </form>
+</section>
+
+<section class="card">
+    <div class="section-header">
+        <h3>Pedidos</h3>
+        <span class="muted">{{ orders|length }} resultado(s)</span>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>ifood_order_id</th>
+                    <th>Status</th>
+                    <th>Tipo</th>
+                    <th>Timing</th>
+                    <th>Categoria</th>
+                    <th>placed_at</th>
+                    <th>last_synced_at</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for order in orders %}
+                <tr>
+                    <td>{{ order.ifood_order_id }}</td>
+                    <td><span class="badge">{{ order.current_status }}</span></td>
+                    <td>{{ order.order_type or '-' }}</td>
+                    <td>{{ order.order_timing or '-' }}</td>
+                    <td>{{ order.category or '-' }}</td>
+                    <td>{{ order.placed_at or '-' }}</td>
+                    <td>{{ order.last_synced_at or '-' }}</td>
+                    <td><a class="button small" href="/panel/orders/{{ order.ifood_order_id }}">Abrir</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

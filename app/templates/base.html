@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - Orders Connector</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='panel.css') }}">
+</head>
+<body>
+    <div class="layout">
+        <aside class="sidebar">
+            <div class="brand">
+                <h1>Orders Panel</h1>
+                <p>Homologação iFood</p>
+            </div>
+            <nav class="nav">
+                <a href="/panel" class="{% if active_page == 'dashboard' %}active{% endif %}">Dashboard</a>
+                <a href="/panel/orders" class="{% if active_page == 'orders' %}active{% endif %}">Pedidos</a>
+                <a href="/panel/events" class="{% if active_page == 'events' %}active{% endif %}">Eventos</a>
+                <a href="/panel/polling" class="{% if active_page == 'polling' %}active{% endif %}">Polling</a>
+                <a href="/health" target="_blank" rel="noreferrer">Health JSON</a>
+            </nav>
+            <div class="sidebar-meta">
+                <div><strong>Scheduler:</strong> {{ 'ON' if settings.scheduler_enabled else 'OFF' }}</div>
+                <div><strong>Polling:</strong> {{ settings.polling_interval_seconds }}s</div>
+                <div><strong>Modo ativo:</strong> {{ 'ON' if settings.orders_active_mode else 'OFF' }}</div>
+            </div>
+        </aside>
+
+        <main class="content">
+            <header class="page-header">
+                <div>
+                    <h2>{{ title }}</h2>
+                    <p>Painel operacional interno para homologação.</p>
+                </div>
+            </header>
+
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+</body>
+</html>

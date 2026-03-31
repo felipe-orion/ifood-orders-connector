@@ -3,13 +3,18 @@ from __future__ import annotations
 import asyncio
 from functools import lru_cache
 from time import perf_counter
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
 from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.integrations.token_manager import TokenManager, get_token_manager
+from app.orders.retry_policy import (
+    calculate_retry_delay_seconds,
+    should_retry_cancellation_reasons,
+    should_retry_order_read,
+)
 
 logger = get_logger(__name__)
 
@@ -32,8 +37,52 @@ class IfoodClient:
         *,
         json: dict[str, Any] | list[dict[str, Any]] | None = None,
         headers: dict[str, str] | None = None,
+        retry_on_unauthorized: bool = True,
     ) -> httpx.Response:
         token = await self.token_manager.get_valid_token()
+        response = await self._request_once(
+            method,
+            url,
+            token=token,
+            json=json,
+            headers=headers,
+        )
+
+        if response.status_code == 401 and retry_on_unauthorized:
+            logger.warning(
+                "iFood request returned 401. Forcing token refresh and retrying once.",
+                extra={
+                    "http_method": method,
+                    "url": url,
+                },
+            )
+            refreshed_token = await self.token_manager.force_refresh()
+            logger.info(
+                "Retrying iFood request after generating a new token.",
+                extra={
+                    "http_method": method,
+                    "url": url,
+                },
+            )
+            response = await self._request_once(
+                method,
+                url,
+                token=refreshed_token,
+                json=json,
+                headers=headers,
+            )
+
+        return response
+
+    async def _request_once(
+        self,
+        method: str,
+        url: str,
+        *,
+        token: str,
+        json: dict[str, Any] | list[dict[str, Any]] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> httpx.Response:
         request_headers = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
@@ -125,6 +174,85 @@ class IfoodClient:
 
         return PollingApiResult(status_code=204, events=[])
 
+    async def _request_with_retry(
+        self,
+        method: str,
+        url: str,
+        *,
+        operation_name: str,
+        should_retry_status: Callable[[int], bool],
+        json: dict[str, Any] | list[dict[str, Any]] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> httpx.Response:
+        attempts = max(self.settings.orders_read_retry_attempts, 1)
+        for attempt in range(1, attempts + 1):
+            try:
+                response = await self._request(method, url, json=json, headers=headers)
+                response.raise_for_status()
+                return response
+            except httpx.HTTPStatusError as exc:
+                response = exc.response
+                status_code = response.status_code if response is not None else None
+                if response is None or not should_retry_status(response.status_code) or attempt >= attempts:
+                    logger.exception(
+                        "iFood read request failed with non-retryable or final HTTP error",
+                        extra={
+                            "operation": operation_name,
+                            "url": url,
+                            "attempt": attempt,
+                            "status_code": status_code,
+                        },
+                    )
+                    raise
+
+                delay_seconds = calculate_retry_delay_seconds(
+                    attempt,
+                    self.settings.orders_read_retry_base_delay_seconds,
+                    retry_after=response.headers.get("Retry-After"),
+                )
+                logger.warning(
+                    "Retrying iFood read request after HTTP error",
+                    extra={
+                        "operation": operation_name,
+                        "url": url,
+                        "attempt": attempt,
+                        "status_code": status_code,
+                        "delay_seconds": delay_seconds,
+                        "retry_after": response.headers.get("Retry-After"),
+                    },
+                )
+                await asyncio.sleep(delay_seconds)
+            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                if attempt >= attempts:
+                    logger.exception(
+                        "iFood read request failed after retries due to timeout/network error",
+                        extra={
+                            "operation": operation_name,
+                            "url": url,
+                            "attempt": attempt,
+                            "error": str(exc),
+                        },
+                    )
+                    raise
+
+                delay_seconds = calculate_retry_delay_seconds(
+                    attempt,
+                    self.settings.orders_read_retry_base_delay_seconds,
+                )
+                logger.warning(
+                    "Retrying iFood read request after timeout/network error",
+                    extra={
+                        "operation": operation_name,
+                        "url": url,
+                        "attempt": attempt,
+                        "delay_seconds": delay_seconds,
+                        "error": str(exc),
+                    },
+                )
+                await asyncio.sleep(delay_seconds)
+
+        raise RuntimeError(f"Retry loop exhausted unexpectedly for {operation_name}.")
+
     async def ack_events(self, event_ids: list[str]) -> httpx.Response:
         payload = [{"id": event_id} for event_id in event_ids]
         return await self._request(
@@ -134,8 +262,12 @@ class IfoodClient:
         )
 
     async def get_order(self, order_id: str) -> dict[str, Any]:
-        response = await self._request("GET", f"{self.settings.ifood_orders_base_url}/orders/{order_id}")
-        response.raise_for_status()
+        response = await self._request_with_retry(
+            "GET",
+            f"{self.settings.ifood_orders_base_url}/orders/{order_id}",
+            operation_name="get_order",
+            should_retry_status=should_retry_order_read,
+        )
         return response.json()
 
     async def confirm_order(self, order_id: str) -> httpx.Response:
@@ -157,14 +289,47 @@ class IfoodClient:
         return await self._request("POST", f"{self.settings.ifood_orders_base_url}/orders/{order_id}/dispatch")
 
     async def get_cancellation_reasons(self, order_id: str) -> list[dict[str, Any]]:
-        response = await self._request(
-            "GET",
-            f"{self.settings.ifood_orders_base_url}/orders/{order_id}/cancellationReasons",
-        )
-        if response.status_code == 204:
-            return []
-        response.raise_for_status()
-        return response.json()
+        url = f"{self.settings.ifood_orders_base_url}/orders/{order_id}/cancellationReasons"
+        attempts = max(self.settings.orders_read_retry_attempts, 1)
+        for attempt in range(1, attempts + 1):
+            response = await self._request("GET", url)
+            if response.status_code == 204:
+                return []
+            try:
+                response.raise_for_status()
+                return response.json()
+            except httpx.HTTPStatusError:
+                if not should_retry_cancellation_reasons(response.status_code) or attempt >= attempts:
+                    logger.exception(
+                        "Cancellation reasons request failed with non-retryable or final HTTP error",
+                        extra={
+                            "operation": "get_cancellation_reasons",
+                            "url": url,
+                            "attempt": attempt,
+                            "status_code": response.status_code,
+                        },
+                    )
+                    raise
+
+                delay_seconds = calculate_retry_delay_seconds(
+                    attempt,
+                    self.settings.orders_read_retry_base_delay_seconds,
+                    retry_after=response.headers.get("Retry-After"),
+                )
+                logger.warning(
+                    "Retrying cancellation reasons request",
+                    extra={
+                        "operation": "get_cancellation_reasons",
+                        "url": url,
+                        "attempt": attempt,
+                        "status_code": response.status_code,
+                        "delay_seconds": delay_seconds,
+                        "retry_after": response.headers.get("Retry-After"),
+                    },
+                )
+                await asyncio.sleep(delay_seconds)
+
+        return []
 
     async def request_cancellation(self, order_id: str, payload: dict[str, Any]) -> httpx.Response:
         return await self._request(

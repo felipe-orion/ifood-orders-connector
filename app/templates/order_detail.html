@@ -1,0 +1,561 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="grid grid-2">
+    <article class="card">
+        <div class="section-header">
+            <h3>Resumo do Pedido</h3>
+            <div class="inline-badges">
+                <span class="badge {{ order['status_badge_class'] }}">{{ order["status_key"] }}</span>
+                <span class="badge {{ order['order_type_badge_class'] }}">{{ order["order_type"] or "-" }}</span>
+                <span class="badge {{ order['category_badge_class'] }}">{{ order["category"] or "SEM_CATEGORIA" }}</span>
+            </div>
+        </div>
+        <dl class="key-values">
+            <div><dt>ifood_order_id</dt><dd>{{ order["ifood_order_id"] }}</dd></div>
+            <div><dt>display_id</dt><dd>{{ order["display_id"] or "-" }}</dd></div>
+            <div><dt>status atual</dt><dd>{{ order["current_status"] }}</dd></div>
+            <div><dt>order_type</dt><dd>{{ order["order_type"] or "-" }}</dd></div>
+            <div><dt>order_timing</dt><dd>{{ order["order_timing"] or "-" }}</dd></div>
+            <div><dt>category</dt><dd>{{ order["category"] or "-" }}</dd></div>
+            <div><dt>placed_at</dt><dd>{{ order["placed_at"] or "-" }}</dd></div>
+            <div><dt>last_synced_at</dt><dd>{{ order["last_synced_at"] or "-" }}</dd></div>
+            <div><dt>pickup_code</dt><dd>{{ order["delivery"]["pickup_code"] if order["delivery"] else "-" }}</dd></div>
+            <div><dt>observacoes</dt><dd>{{ order["customer_notes"] or "-" }}</dd></div>
+            <div><dt>total</dt><dd>{{ order["total_amount"] or "-" }} {{ order["currency"] }}</dd></div>
+        </dl>
+    </article>
+
+    <article class="card">
+        <div class="section-header">
+            <h3>Acoes Operacionais</h3>
+            <label class="refresh-toggle">
+                <input id="auto-refresh-toggle" type="checkbox">
+                Auto refresh 15s
+            </label>
+        </div>
+
+        <div class="action-explainer">
+            <strong>Fluxo atual:</strong>
+            <span>
+                {% if order["ui"]["view_only"] %}
+                Pedido em modo visualizacao para este status/tipo.
+                {% elif order["ui"]["show_dispatch"] %}
+                Pedido pronto para despacho.
+                {% elif order["ui"]["show_ready"] %}
+                Pedido em preparo e pronto para avancar para ready.
+                {% elif order["ui"]["show_start_preparation"] %}
+                Pedido confirmado e pronto para iniciar preparo.
+                {% elif order["ui"]["show_confirm"] %}
+                Pedido colocado e pronto para confirmacao.
+                {% else %}
+                Acompanhe os eventos recebidos e o historico abaixo.
+                {% endif %}
+            </span>
+        </div>
+
+        <div class="actions-grid">
+            {% if order["ui"]["show_confirm"] %}
+            <button class="button primary" onclick="runAction('confirm', 'Confirmacao enviada')">Confirmar</button>
+            {% endif %}
+
+            {% if order["ui"]["show_start_preparation"] %}
+            <button class="button primary" onclick="runAction('start-preparation', 'Inicio de preparo enviado')">Iniciar preparo</button>
+            {% endif %}
+
+            {% if order["ui"]["show_ready"] %}
+            <button class="button primary" onclick="runAction('ready', 'ReadyToPickup enviado')">Pronto para retirar</button>
+            {% endif %}
+
+            {% if order["ui"]["show_dispatch"] %}
+            <button class="button primary" onclick="runAction('dispatch', 'Dispatch enviado')">Despachar</button>
+            {% endif %}
+
+            {% if order["ui"]["show_reason_lookup"] %}
+            <button class="button secondary" onclick="openCancellationModal()">Buscar motivos</button>
+            {% endif %}
+
+            {% if order["ui"]["show_cancel"] %}
+            <button class="button danger" onclick="openCancellationModal(true)">Cancelar pedido</button>
+            {% endif %}
+        </div>
+
+        {% if order["ui"]["view_only"] %}
+        <p class="muted action-note">
+            Nenhuma acao operacional principal disponivel para o status <strong>{{ order["status_key"] }}</strong>
+            {% if order["ui"]["order_type"] %}no tipo <strong>{{ order["ui"]["order_type"] }}</strong>{% endif %}.
+        </p>
+        {% endif %}
+
+        <div id="action-feedback" class="action-feedback hidden">
+            <div id="action-feedback-summary" class="action-feedback-summary"></div>
+            <div id="action-feedback-body" class="action-feedback-body"></div>
+        </div>
+    </article>
+</section>
+
+<section class="grid grid-2">
+    <article class="card">
+        <div class="section-header">
+            <h3>Cliente</h3>
+        </div>
+        {% if order["customer"] %}
+        <dl class="key-values">
+            <div><dt>Nome</dt><dd>{{ order["customer"]["name"] or "-" }}</dd></div>
+            <div><dt>Documento</dt><dd>{{ order["customer"]["document_number"] or "-" }}</dd></div>
+            <div><dt>Telefone</dt><dd>{{ order["customer"]["phone_number"] or "-" }}</dd></div>
+            <div><dt>Localizer</dt><dd>{{ order["customer"]["phone_localizer"] or "-" }}</dd></div>
+            <div><dt>Segmentacao</dt><dd>{{ order["customer"]["segmentation"] or "-" }}</dd></div>
+        </dl>
+        {% else %}
+        <p class="muted">Sem dados de cliente.</p>
+        {% endif %}
+    </article>
+
+    <article class="card">
+        <div class="section-header">
+            <h3>Entrega / Retirada</h3>
+        </div>
+        {% if order["delivery"] %}
+        <dl class="key-values">
+            <div><dt>Modo</dt><dd>{{ order["delivery"]["delivery_mode"] }}</dd></div>
+            <div><dt>delivered_by</dt><dd>{{ order["delivery"]["delivered_by"] or "-" }}</dd></div>
+            <div><dt>delivery_datetime</dt><dd>{{ order["delivery"]["delivery_datetime"] or "-" }}</dd></div>
+            <div><dt>takeout_datetime</dt><dd>{{ order["delivery"]["takeout_datetime"] or "-" }}</dd></div>
+            <div><dt>schedule_start_at</dt><dd>{{ order["delivery"]["schedule_start_at"] or "-" }}</dd></div>
+            <div><dt>schedule_end_at</dt><dd>{{ order["delivery"]["schedule_end_at"] or "-" }}</dd></div>
+            <div><dt>Endereco</dt><dd>{{ order["delivery"]["address_street"] or "-" }}, {{ order["delivery"]["address_number"] or "-" }} - {{ order["delivery"]["address_city"] or "-" }}</dd></div>
+        </dl>
+        {% else %}
+        <p class="muted">Sem dados de entrega.</p>
+        {% endif %}
+    </article>
+</section>
+
+<section class="card">
+    <div class="section-header">
+        <h3>Itens</h3>
+    </div>
+    {% for item in order["items"] %}
+    <div class="item-block">
+        <div class="item-header">
+            <strong>{{ item["item_sequence"] }}. {{ item["name"] }}</strong>
+            <span>{{ item["quantity"] }} x {{ item["unit_price_amount"] or "-" }}</span>
+        </div>
+        <div class="muted">Observacoes: {{ item["observations"] or "-" }}</div>
+        {% if item["options"] %}
+        <ul class="options-list">
+            {% for option in item["options"] %}
+            <li>{{ option["group_name"] or "Opcao" }} - {{ option["name"] }} ({{ option["quantity"] }})</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+    {% endfor %}
+</section>
+
+<section class="grid grid-2">
+    <article class="card">
+        <div class="section-header">
+            <h3>Pagamentos</h3>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Metodo</th>
+                        <th>Tipo</th>
+                        <th>Bandeira</th>
+                        <th>Valor</th>
+                        <th>Troco</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for payment in order["payments"] %}
+                    <tr>
+                        <td>{{ payment["method"] }}</td>
+                        <td>{{ payment["payment_type"] or "-" }}</td>
+                        <td>{{ payment["card_brand"] or "-" }}</td>
+                        <td>{{ payment["amount"] }} {{ payment["currency"] }}</td>
+                        <td>{{ payment["change_for_amount"] or "-" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </article>
+
+    <article class="card">
+        <div class="section-header">
+            <h3>Beneficios / Descontos</h3>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Tipo</th>
+                        <th>Descricao</th>
+                        <th>Campanha</th>
+                        <th>Valor</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for benefit in order["benefits"] %}
+                    <tr>
+                        <td>{{ benefit["benefit_type"] or "-" }}</td>
+                        <td>{{ benefit["description"] or "-" }}</td>
+                        <td>{{ benefit["campaign_name"] or "-" }}</td>
+                        <td>{{ benefit["amount"] or "-" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </article>
+</section>
+
+<section class="grid grid-2">
+    <article class="card">
+        <div class="section-header">
+            <h3>Historico de Status</h3>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Status</th>
+                        <th>occurred_at</th>
+                        <th>recorded_at</th>
+                        <th>source</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in status_history %}
+                    <tr>
+                        <td>{{ item.status_full_code }}</td>
+                        <td>{{ item.occurred_at }}</td>
+                        <td>{{ item.recorded_at }}</td>
+                        <td>{{ item.source }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </article>
+
+    <article class="card">
+        <div class="section-header">
+            <h3>Acoes Executadas</h3>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Acao</th>
+                        <th>Resultado</th>
+                        <th>HTTP</th>
+                        <th>Enviado em</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in actions %}
+                    <tr>
+                        <td>{{ item.action_type }}</td>
+                        <td>{{ item.result_status }}</td>
+                        <td>{{ item.http_status or "-" }}</td>
+                        <td>{{ item.request_sent_at }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </article>
+</section>
+
+<section class="card">
+    <div class="section-header">
+        <h3>Eventos Relacionados</h3>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>event_code</th>
+                    <th>event_full_code</th>
+                    <th>event_created_at</th>
+                    <th>processing_status</th>
+                    <th>classified_as</th>
+                    <th>tentativas</th>
+                    <th>erro</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for event in events %}
+                <tr>
+                    <td>{{ event.event_code }}</td>
+                    <td>{{ event.event_full_code }}</td>
+                    <td>{{ event.event_created_at }}</td>
+                    <td>{{ event.processing_status or "-" }}</td>
+                    <td>{{ event.classified_as or "-" }}</td>
+                    <td>{{ event.attempt_count or 0 }}</td>
+                    <td>{{ event.last_error_message or "-" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<div id="cancel-modal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" onclick="closeCancellationModal()"></div>
+    <div class="modal-dialog">
+        <div class="section-header">
+            <h3>Cancelar Pedido</h3>
+            <button class="button small" type="button" onclick="closeCancellationModal()">Fechar</button>
+        </div>
+        <p class="muted">Selecione um motivo retornado pela API antes de confirmar o cancelamento.</p>
+        <div id="cancel-modal-state" class="modal-state muted">Buscando motivos...</div>
+        <div class="modal-form">
+            <label for="cancel-reason-select">Motivo</label>
+            <select id="cancel-reason-select" disabled>
+                <option value="">Selecione um motivo</option>
+            </select>
+            <button id="cancel-confirm-button" class="button danger" type="button" disabled onclick="submitCancellation()">
+                Confirmar cancelamento
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+const orderId = "{{ order['ifood_order_id'] }}";
+const autoRefreshKey = `panel:auto-refresh:${orderId}`;
+let cancellationReasonsCache = [];
+let autoRefreshTimer = null;
+
+function setFeedbackState(kind, payload, label = "") {
+    const container = document.getElementById("action-feedback");
+    const summary = document.getElementById("action-feedback-summary");
+    const body = document.getElementById("action-feedback-body");
+    container.classList.remove("hidden", "feedback-success", "feedback-error", "feedback-info");
+    container.classList.add(`feedback-${kind}`);
+
+    const httpStatus = payload && payload.http_status ? `HTTP ${payload.http_status}` : "sem HTTP";
+    const outcome = payload && payload.success === true
+        ? "sucesso"
+        : payload && payload.skipped
+            ? "acao ignorada"
+            : "erro";
+
+    summary.innerHTML = `
+        <strong>${label || (payload && payload.action_type) || "Resultado"}</strong>
+        <span>${outcome}</span>
+        <span>${httpStatus}</span>
+    `;
+
+    let detailHtml = "";
+    if (payload && payload.skip_reason) {
+        detailHtml += `<p><strong>Motivo:</strong> ${payload.skip_reason}</p>`;
+    }
+    const apiErrorMessage = payload && payload.response_body && payload.response_body.error
+        ? payload.response_body.error.message || payload.response_body.error.code
+        : null;
+    if (apiErrorMessage) {
+        detailHtml += `<p><strong>API:</strong> ${escapeHtml(String(apiErrorMessage))}</p>`;
+    }
+    if (payload && payload.response_body) {
+        detailHtml += `<details><summary>response_body</summary><pre>${escapeHtml(JSON.stringify(payload.response_body, null, 2))}</pre></details>`;
+    }
+    if (payload && payload.error_message) {
+        detailHtml += `<p><strong>Erro:</strong> ${escapeHtml(payload.error_message)}</p>`;
+    }
+    body.innerHTML = detailHtml || "<p>Nenhum detalhe adicional.</p>";
+}
+
+function escapeHtml(value) {
+    return value
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+}
+
+function storeFeedback(kind, payload, label) {
+    sessionStorage.setItem("panel_action_feedback", JSON.stringify({ kind, payload, label }));
+}
+
+function restoreFeedback() {
+    const raw = sessionStorage.getItem("panel_action_feedback");
+    if (!raw) {
+        return;
+    }
+    const parsed = JSON.parse(raw);
+    setFeedbackState(parsed.kind, parsed.payload, parsed.label);
+    sessionStorage.removeItem("panel_action_feedback");
+}
+
+async function runAction(actionPath, label, payload = null, method = "POST") {
+    const options = { method, headers: {} };
+    if (payload !== null) {
+        options.headers["Content-Type"] = "application/json";
+        options.body = JSON.stringify(payload);
+    }
+
+    const basePath = actionPath === "cancellation-reasons"
+        ? `/internal/actions/${orderId}/cancellation-reasons`
+        : `/internal/orders/${orderId}/${actionPath}`;
+
+    const response = await fetch(basePath, options);
+    const data = await response.json();
+    storeFeedback(response.ok ? "success" : "error", data, label);
+    window.location.reload();
+}
+
+function openCancellationModal(autoFetch = false) {
+    const modal = document.getElementById("cancel-modal");
+    modal.classList.remove("hidden");
+    modal.setAttribute("aria-hidden", "false");
+    if (autoFetch || cancellationReasonsCache.length === 0) {
+        loadCancellationReasons();
+    } else {
+        populateCancellationReasons(cancellationReasonsCache);
+    }
+}
+
+function closeCancellationModal() {
+    const modal = document.getElementById("cancel-modal");
+    modal.classList.add("hidden");
+    modal.setAttribute("aria-hidden", "true");
+}
+
+async function loadCancellationReasons() {
+    const state = document.getElementById("cancel-modal-state");
+    const select = document.getElementById("cancel-reason-select");
+    const button = document.getElementById("cancel-confirm-button");
+    state.textContent = "Buscando motivos...";
+    select.disabled = true;
+    button.disabled = true;
+
+    const response = await fetch(`/internal/actions/${orderId}/cancellation-reasons`);
+    const data = await response.json();
+    if (!response.ok || data.success === false) {
+        state.textContent = `Falha ao buscar motivos. ${data.skip_reason || data.http_status || ""}`;
+        setFeedbackState("error", data, "Buscar motivos de cancelamento");
+        return;
+    }
+
+    const reasons = Array.isArray(data.response_body)
+        ? data.response_body
+        : Array.isArray(data.response_body?.cancellationReasons)
+            ? data.response_body.cancellationReasons
+            : [];
+
+    cancellationReasonsCache = reasons;
+    populateCancellationReasons(reasons);
+    setFeedbackState("info", data, "Motivos de cancelamento carregados");
+}
+
+function populateCancellationReasons(reasons) {
+    const state = document.getElementById("cancel-modal-state");
+    const select = document.getElementById("cancel-reason-select");
+    const button = document.getElementById("cancel-confirm-button");
+    select.innerHTML = '<option value="">Selecione um motivo</option>';
+
+    reasons.forEach((reason, index) => {
+        const option = document.createElement("option");
+        option.value = String(index);
+        option.textContent =
+            reason.description ||
+            reason.reason ||
+            reason.name ||
+            reason.code ||
+            reason.id ||
+            `Motivo ${index + 1}`;
+        select.appendChild(option);
+    });
+
+    const hasReasons = reasons.length > 0;
+    state.textContent = hasReasons
+        ? "Motivos carregados. Selecione um item para cancelar."
+        : "Nenhum motivo retornado pela API.";
+    select.disabled = !hasReasons;
+    button.disabled = !hasReasons;
+}
+
+function buildCancellationPayload(reason) {
+    const cancellationCode =
+        reason.cancelCodeId ??
+        reason.cancellationCode ??
+        reason.code ??
+        null;
+    const description =
+        reason.description ||
+        reason.reason ||
+        reason.name ||
+        reason.label ||
+        reason.code ||
+        "";
+
+    const payload = {};
+    if (cancellationCode !== null && cancellationCode !== undefined && cancellationCode !== "") {
+        payload.cancellationCode = String(cancellationCode);
+    }
+    if (description) {
+        payload.reason = description;
+    }
+    return payload;
+}
+
+async function submitCancellation() {
+    const select = document.getElementById("cancel-reason-select");
+    const selectedIndex = select.value;
+    if (selectedIndex === "") {
+        return;
+    }
+
+    const selectedReason = cancellationReasonsCache[Number(selectedIndex)];
+    const payload = buildCancellationPayload(selectedReason);
+    if (!payload.cancellationCode) {
+        setFeedbackState(
+            "error",
+            {
+                response_body: {
+                    error: {
+                        code: "InvalidCancellationReason",
+                        message: "O motivo selecionado nao possui cancelCodeId/cancellationCode valido.",
+                    },
+                },
+            },
+            "Cancelamento solicitado",
+        );
+        return;
+    }
+    closeCancellationModal();
+    await runAction("cancel", "Cancelamento solicitado", payload);
+}
+
+function setupAutoRefresh() {
+    const toggle = document.getElementById("auto-refresh-toggle");
+    const saved = localStorage.getItem(autoRefreshKey) === "1";
+    toggle.checked = saved;
+
+    const applyRefresh = () => {
+        if (autoRefreshTimer) {
+            clearInterval(autoRefreshTimer);
+            autoRefreshTimer = null;
+        }
+        if (toggle.checked) {
+            autoRefreshTimer = window.setInterval(() => window.location.reload(), 15000);
+            localStorage.setItem(autoRefreshKey, "1");
+        } else {
+            localStorage.removeItem(autoRefreshKey);
+        }
+    };
+
+    toggle.addEventListener("change", applyRefresh);
+    applyRefresh();
+}
+
+restoreFeedback();
+setupAutoRefresh();
+</script>
+{% endblock %}

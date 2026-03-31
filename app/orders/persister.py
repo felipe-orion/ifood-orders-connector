@@ -71,11 +71,11 @@ class OrderPersister:
         if order.placed_at is None:
             order.placed_at = external_created_at or source_event.event_created_at
 
-        order.customer = self._build_customer(normalized_order["customer"])
-        order.delivery = self._build_delivery(normalized_order["delivery"])
-        order.items = self._build_items(normalized_order["items"])
-        order.payments = [OrderPayment(**payment) for payment in normalized_order["payments"]]
-        order.benefits = [OrderBenefit(**benefit) for benefit in normalized_order["benefits"]]
+        self._upsert_customer(order, normalized_order["customer"])
+        self._upsert_delivery(order, normalized_order["delivery"])
+        self._replace_order_items(order, normalized_order["items"])
+        self._replace_order_payments(order, normalized_order["payments"])
+        self._replace_order_benefits(order, normalized_order["benefits"])
 
         payload_hash = hashlib.sha256(json.dumps(raw_payload, sort_keys=True).encode("utf-8")).hexdigest()
         existing_snapshot = self.session.scalar(
@@ -102,26 +102,56 @@ class OrderPersister:
         self.session.flush()
         return order
 
-    @staticmethod
-    def _build_customer(customer_payload: dict | None) -> OrderCustomer | None:
+    def _upsert_customer(self, order: Order, customer_payload: dict | None) -> None:
         if not customer_payload:
-            return None
-        return OrderCustomer(**customer_payload)
+            order.customer = None
+            return
 
-    @staticmethod
-    def _build_delivery(delivery_payload: dict | None) -> OrderDelivery | None:
+        existing_customer = order.customer
+        if existing_customer is None:
+            order.customer = OrderCustomer(**customer_payload)
+            return
+
+        for field, value in customer_payload.items():
+            setattr(existing_customer, field, value)
+
+    def _upsert_delivery(self, order: Order, delivery_payload: dict | None) -> None:
         if not delivery_payload:
-            return None
+            order.delivery = None
+            return
 
-        return OrderDelivery(
-            **{
-                **delivery_payload,
-                "delivery_datetime": _parse_datetime(delivery_payload.get("delivery_datetime")),
-                "takeout_datetime": _parse_datetime(delivery_payload.get("takeout_datetime")),
-                "schedule_start_at": _parse_datetime(delivery_payload.get("schedule_start_at")),
-                "schedule_end_at": _parse_datetime(delivery_payload.get("schedule_end_at")),
-            }
-        )
+        parsed_payload = {
+            **delivery_payload,
+            "delivery_datetime": _parse_datetime(delivery_payload.get("delivery_datetime")),
+            "takeout_datetime": _parse_datetime(delivery_payload.get("takeout_datetime")),
+            "schedule_start_at": _parse_datetime(delivery_payload.get("schedule_start_at")),
+            "schedule_end_at": _parse_datetime(delivery_payload.get("schedule_end_at")),
+        }
+
+        existing_delivery = order.delivery
+        if existing_delivery is None:
+            order.delivery = OrderDelivery(**parsed_payload)
+            return
+
+        for field, value in parsed_payload.items():
+            setattr(existing_delivery, field, value)
+
+    def _replace_order_items(self, order: Order, items_payload: list[dict]) -> None:
+        self._clear_relationship(order.items)
+        order.items = self._build_items(items_payload)
+
+    def _replace_order_payments(self, order: Order, payments_payload: list[dict]) -> None:
+        self._clear_relationship(order.payments)
+        order.payments = [OrderPayment(**payment) for payment in payments_payload]
+
+    def _replace_order_benefits(self, order: Order, benefits_payload: list[dict]) -> None:
+        self._clear_relationship(order.benefits)
+        order.benefits = [OrderBenefit(**benefit) for benefit in benefits_payload]
+
+    def _clear_relationship(self, relationship_collection) -> None:
+        if relationship_collection:
+            relationship_collection.clear()
+            self.session.flush()
 
     @staticmethod
     def _build_items(items_payload: list[dict]) -> list[OrderItem]:

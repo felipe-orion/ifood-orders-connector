@@ -37,6 +37,12 @@ class EventProcessor:
 
         if classification.requires_order_fetch:
             order = await self.order_service.ingest_order_from_event(session, event)
+            if classification.updates_status:
+                order = await self.order_service.apply_status_event(
+                    session,
+                    event,
+                    append_history=False,
+                ) or order
             action_result = await self.action_service.maybe_execute_for_event(
                 session,
                 order=order,

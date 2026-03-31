@@ -1,4 +1,7 @@
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 import app.models  # noqa: F401
 from app.api.health import router as health_router
@@ -7,6 +10,7 @@ from app.core.config import get_settings
 from app.core.database import init_db
 from app.core.logging import configure_logging, get_logger
 from app.tasks.scheduler import shutdown_scheduler, start_scheduler
+from app.web.panel import router as panel_router
 
 configure_logging()
 settings = get_settings()
@@ -18,8 +22,10 @@ app = FastAPI(
     debug=settings.debug,
 )
 
+app.mount("/static", StaticFiles(directory=str(Path(__file__).resolve().parent / "static")), name="static")
 app.include_router(health_router)
 app.include_router(internal_router, prefix="/internal", tags=["internal"])
+app.include_router(panel_router, tags=["panel"])
 
 
 @app.on_event("startup")

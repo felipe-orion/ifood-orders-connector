@@ -66,7 +66,13 @@ class OrderService:
             self._mark_failed(state, str(exc))
             raise
 
-    async def apply_status_event(self, session: Session, event: OrderEventRaw) -> Order | None:
+    async def apply_status_event(
+        self,
+        session: Session,
+        event: OrderEventRaw,
+        *,
+        append_history: bool = True,
+    ) -> Order | None:
         order = session.scalar(select(Order).where(Order.ifood_order_id == event.ifood_order_id))
         if not order:
             if event.processing_state:
@@ -91,6 +97,8 @@ class OrderService:
 
         if event_key == "CONFIRMED":
             order.confirmed_at = event.event_created_at
+        elif event_key in {"PREPARATION_STARTED", "IN_PREPARATION", "PREPARING"}:
+            order.preparation_start_at = event.event_created_at
         elif event_key == "READY_TO_PICKUP":
             order.ready_to_pickup_at = event.event_created_at
         elif event_key == "DISPATCHED":
@@ -100,7 +108,8 @@ class OrderService:
         elif event_key == "CANCELLED":
             order.cancelled_at = event.event_created_at
 
-        self._append_status_history(session, order, event)
+        if append_history:
+            self._append_status_history(session, order, event)
         if event.processing_state:
             self._mark_processed(event.processing_state)
         logger.info(
@@ -109,6 +118,7 @@ class OrderService:
                 "ifood_order_id": str(event.ifood_order_id),
                 "ifood_event_id": str(event.ifood_event_id),
                 "current_status": order.current_status,
+                "append_history": append_history,
             },
         )
         return order

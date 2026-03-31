@@ -74,6 +74,19 @@ class ActionService:
                 response_body=None,
             )
 
+        automation_validation = self._validate_automatic_action_context(order, action_name)
+        if not automation_validation.allowed:
+            return ActionExecutionResult(
+                action_type=action_name,
+                executed=False,
+                success=None,
+                skipped=True,
+                skip_reason=automation_validation.reason,
+                action_request_id=None,
+                http_status=None,
+                response_body=None,
+            )
+
         if action_name == "confirm":
             return await self.confirm_order(session, order, event=event, trigger_mode="AUTO")
 
@@ -485,19 +498,38 @@ class ActionService:
     def _current_status_key(order: Order) -> str:
         return extract_event_key(order.current_status, order.current_status)
 
+    @staticmethod
+    def _current_order_type(order: Order) -> str:
+        return (order.order_type or "").strip().upper()
+
+    @staticmethod
+    def _current_order_timing(order: Order) -> str:
+        return (order.order_timing or "").strip().upper()
+
+    def _validate_automatic_action_context(self, order: Order, action_type: str) -> ActionContextValidation:
+        order_timing = self._current_order_timing(order)
+        if action_type == "confirm" and order_timing == "SCHEDULED":
+            return ActionContextValidation(False, "SCHEDULED_ORDER_REQUIRES_MANUAL_CONFIRMATION")
+        return ActionContextValidation(True)
+
     def _validate_action_context(self, order: Order, action_type: str) -> ActionContextValidation:
         status_key = self._current_status_key(order)
+        order_type = self._current_order_type(order)
         if status_key in {"CONCLUDED", "CANCELLED"}:
             return ActionContextValidation(False, "ORDER_ALREADY_CLOSED")
 
-        if action_type == "confirm" and status_key in {"CONFIRMED", "READY_TO_PICKUP", "DISPATCHED"}:
-            return ActionContextValidation(False, "ORDER_ALREADY_CONFIRMED")
-        if action_type == "startPreparation" and status_key not in {"PLACED", "CONFIRMED"}:
+        if action_type == "confirm" and status_key != "PLACED":
+            return ActionContextValidation(False, "ORDER_STATUS_NOT_VALID_FOR_CONFIRM")
+        if action_type == "startPreparation" and status_key != "CONFIRMED":
             return ActionContextValidation(False, "ORDER_STATUS_NOT_VALID_FOR_START_PREPARATION")
-        if action_type == "readyToPickup" and status_key in {"PLACED"}:
+        if action_type == "readyToPickup" and status_key not in {"CONFIRMED", "PREPARATION_STARTED", "IN_PREPARATION", "PREPARING"}:
             return ActionContextValidation(False, "ORDER_NOT_READY_FOR_READY_TO_PICKUP")
-        if action_type == "dispatch" and status_key in {"PLACED", "CONFIRMED"}:
+        if action_type == "dispatch" and order_type == "TAKEOUT":
+            return ActionContextValidation(False, "ORDER_TYPE_NOT_VALID_FOR_DISPATCH")
+        if action_type == "dispatch" and status_key != "READY_TO_PICKUP":
             return ActionContextValidation(False, "ORDER_NOT_READY_FOR_DISPATCH")
+        if action_type == "requestCancellation" and status_key in {"READY_TO_PICKUP", "DISPATCHED"}:
+            return ActionContextValidation(False, "ORDER_STATUS_NOT_VALID_FOR_REQUEST_CANCELLATION")
 
         return ActionContextValidation(True)
 

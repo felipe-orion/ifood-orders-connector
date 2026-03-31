@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="card">
+    <form method="get" action="/panel/events" class="filters">
+        <input type="text" name="order_id" placeholder="Buscar order_id" value="{{ filters.order_id }}">
+        <select name="processing_status">
+            <option value="">Todos os processing_status</option>
+            {% for item in available_processing_statuses %}
+            <option value="{{ item }}" {% if filters.processing_status == item %}selected{% endif %}>{{ item }}</option>
+            {% endfor %}
+        </select>
+        <select name="limit">
+            {% for value in [50, 100, 200, 300] %}
+            <option value="{{ value }}" {% if filters.limit == value %}selected{% endif %}>{{ value }} registros</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="button primary">Aplicar</button>
+    </form>
+</section>
+
+<section class="card">
+    <div class="section-header">
+        <h3>Eventos / Auditoria</h3>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>ifood_order_id</th>
+                    <th>event_code</th>
+                    <th>event_full_code</th>
+                    <th>event_created_at</th>
+                    <th>processing_status</th>
+                    <th>classified_as</th>
+                    <th>tentativas</th>
+                    <th>erro</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for event in events %}
+                <tr>
+                    <td><a href="/panel/orders/{{ event.ifood_order_id }}">{{ event.ifood_order_id }}</a></td>
+                    <td>{{ event.event_code }}</td>
+                    <td>{{ event.event_full_code }}</td>
+                    <td>{{ event.event_created_at }}</td>
+                    <td>{{ event.processing_status or '-' }}</td>
+                    <td>{{ event.classified_as or '-' }}</td>
+                    <td>{{ event.attempt_count or 0 }}</td>
+                    <td>{{ event.last_error_message or '-' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

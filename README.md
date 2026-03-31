@@ -59,6 +59,12 @@ uvicorn app.main:app --reload
 - `GET /internal/config`
 - `POST /internal/polling/run-once`
 - `GET /internal/orders/{order_id}`
+- `GET /internal/orders/{order_id}/status`
+- `POST /internal/orders/{order_id}/confirm`
+- `POST /internal/orders/{order_id}/start-preparation`
+- `POST /internal/orders/{order_id}/ready`
+- `POST /internal/orders/{order_id}/dispatch`
+- `POST /internal/orders/{order_id}/cancel`
 - `POST /internal/actions/{order_id}/confirm`
 - `POST /internal/actions/{order_id}/start-preparation`
 - `POST /internal/actions/{order_id}/ready-to-pickup`
@@ -98,6 +104,13 @@ curl http://127.0.0.1:8000/internal/orders/{ifood_order_id}
 ### 4. Test actions manually
 
 ```bash
+curl -X POST http://127.0.0.1:8000/internal/orders/{ifood_order_id}/confirm
+curl -X POST http://127.0.0.1:8000/internal/orders/{ifood_order_id}/start-preparation
+curl -X POST http://127.0.0.1:8000/internal/orders/{ifood_order_id}/ready
+curl -X POST http://127.0.0.1:8000/internal/orders/{ifood_order_id}/dispatch
+curl -X POST http://127.0.0.1:8000/internal/orders/{ifood_order_id}/cancel -H "Content-Type: application/json" -d "{\"reason\":\"CUSTOMER_REQUEST\"}"
+curl http://127.0.0.1:8000/internal/orders/{ifood_order_id}/status
+
 curl -X POST http://127.0.0.1:8000/internal/actions/{ifood_order_id}/confirm
 curl -X POST http://127.0.0.1:8000/internal/actions/{ifood_order_id}/start-preparation
 curl -X POST http://127.0.0.1:8000/internal/actions/{ifood_order_id}/ready-to-pickup
@@ -105,6 +118,46 @@ curl -X POST http://127.0.0.1:8000/internal/actions/{ifood_order_id}/dispatch
 curl http://127.0.0.1:8000/internal/actions/{ifood_order_id}/cancellation-reasons
 curl -X POST http://127.0.0.1:8000/internal/actions/{ifood_order_id}/request-cancellation -H "Content-Type: application/json" -d "{\"reason\":\"CUSTOMER_REQUEST\"}"
 ```
+
+### 5. Run a full manual homologation flow
+
+```bash
+python scripts/run_homologation_flow.py {ifood_order_id}
+```
+
+You can tune the delay between actions:
+
+```bash
+python scripts/run_homologation_flow.py {ifood_order_id} --delay 8
+```
+
+### 6. Practical homologation order
+
+1. Keep `ORDERS_ACTIVE_MODE=false` for manual validation.
+2. Run `POST /internal/polling/run-once` until a fresh order appears.
+3. Inspect `GET /internal/orders/{order_id}/status`.
+4. Execute the manual actions in order:
+   - `confirm`
+   - `start-preparation`
+   - `ready`
+   - `dispatch` for delivery only
+5. Run polling again after each action and observe:
+   - new event received
+   - updated current status
+   - new entry in `status_history`
+   - new row in `latest_actions`
+6. For takeout, stop at `ready`.
+7. For cancellation, call `/cancel` with a reason payload and then poll until the final cancel event arrives.
+
+### 7. How to know the connector is ready for homologation
+
+- manual actions return clear `executed/success/http_status`
+- `GET /internal/orders/{order_id}/status` reflects the real state after polling
+- each action creates an `action_request`
+- status changes appear in `order_status_history`
+- delivery flow reaches `DISPATCHED`
+- takeout flow reaches `READY_TO_PICKUP` without dispatch
+- cancellation attempts are traceable and final status still comes from event
 
 ## Tests
 

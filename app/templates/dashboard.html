@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% if polling_message %}
+<div class="alert {{ polling_status or 'info' }}">{{ polling_message }}</div>
+{% endif %}
+
+<section class="grid grid-4">
+    <article class="card stat">
+        <span class="label">API</span>
+        <strong>{{ api_status }}</strong>
+    </article>
+    <article class="card stat">
+        <span class="label">Banco</span>
+        <strong>{{ db_status }}</strong>
+    </article>
+    <article class="card stat">
+        <span class="label">Falhas 24h</span>
+        <strong>{{ recent_failure_count }}</strong>
+    </article>
+    <article class="card stat">
+        <span class="label">Eventos 24h</span>
+        <strong>{{ recent_event_count }}</strong>
+    </article>
+</section>
+
+<section class="grid grid-2">
+    <article class="card">
+        <div class="section-header">
+            <h3>Controle Operacional</h3>
+        </div>
+        <dl class="key-values">
+            <div><dt>Scheduler</dt><dd>{{ 'Habilitado' if scheduler_enabled else 'Desabilitado' }}</dd></div>
+            <div><dt>Intervalo do polling</dt><dd>{{ polling_interval_seconds }}s</dd></div>
+            <div><dt>Último polling_run_id</dt><dd>{{ latest_run.id if latest_run else '-' }}</dd></div>
+            <div><dt>Último http_status</dt><dd>{{ latest_run.http_status if latest_run else '-' }}</dd></div>
+            <div><dt>Último resultado</dt><dd>{% if latest_run %}{{ latest_run.new_event_count }} novos / {{ latest_run.duplicate_event_count }} duplicados{% else %}-{% endif %}</dd></div>
+        </dl>
+        <form method="post" action="/panel/polling/run-once" class="inline-form">
+            <button type="submit" class="button primary">Executar polling agora</button>
+        </form>
+    </article>
+
+    <article class="card">
+        <div class="section-header">
+            <h3>Último Polling</h3>
+        </div>
+        {% if latest_run %}
+        <dl class="key-values">
+            <div><dt>response_event_count</dt><dd>{{ latest_run.response_event_count }}</dd></div>
+            <div><dt>new_event_count</dt><dd>{{ latest_run.new_event_count }}</dd></div>
+            <div><dt>duplicate_event_count</dt><dd>{{ latest_run.duplicate_event_count }}</dd></div>
+            <div><dt>processed_event_count</dt><dd>{{ latest_run.processed_event_count }}</dd></div>
+            <div><dt>failed_event_count</dt><dd>{{ latest_run.failed_event_count }}</dd></div>
+            <div><dt>ack_success</dt><dd>{{ latest_run.ack_success }}</dd></div>
+            <div><dt>finished_at</dt><dd>{{ latest_run.finished_at or '-' }}</dd></div>
+        </dl>
+        {% else %}
+        <p class="muted">Ainda não há polling run registrado.</p>
+        {% endif %}
+    </article>
+</section>
+
+<section class="card">
+    <div class="section-header">
+        <h3>Últimos Polling Runs</h3>
+        <a href="/panel/polling">ver todos</a>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>HTTP</th>
+                    <th>Eventos</th>
+                    <th>Novos</th>
+                    <th>Duplicados</th>
+                    <th>Processados</th>
+                    <th>Falhas</th>
+                    <th>ACK</th>
+                    <th>Finalizado</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for run in recent_runs %}
+                <tr>
+                    <td>{{ run.id }}</td>
+                    <td>{{ run.http_status or '-' }}</td>
+                    <td>{{ run.response_event_count }}</td>
+                    <td>{{ run.new_event_count }}</td>
+                    <td>{{ run.duplicate_event_count }}</td>
+                    <td>{{ run.processed_event_count }}</td>
+                    <td>{{ run.failed_event_count }}</td>
+                    <td>{{ run.ack_success }}</td>
+                    <td>{{ run.finished_at or '-' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="card">
+    <div class="section-header">
+        <h3>Eventos Recentes</h3>
+        <a href="/panel/events">ver todos</a>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Order</th>
+                    <th>Event</th>
+                    <th>Code</th>
+                    <th>Status</th>
+                    <th>Classificação</th>
+                    <th>Tentativas</th>
+                    <th>Erro</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for event in recent_events %}
+                <tr>
+                    <td><a href="/panel/orders/{{ event.ifood_order_id }}">{{ event.ifood_order_id }}</a></td>
+                    <td>{{ event.event_full_code }}</td>
+                    <td>{{ event.event_code }}</td>
+                    <td>{{ event.processing_status or '-' }}</td>
+                    <td>{{ event.classified_as or '-' }}</td>
+                    <td>{{ event.attempt_count or 0 }}</td>
+                    <td>{{ event.last_error_message or '-' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

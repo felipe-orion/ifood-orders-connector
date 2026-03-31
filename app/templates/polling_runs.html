@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="card">
+    <div class="section-header">
+        <h3>Últimas Execuções do Polling</h3>
+        <form method="post" action="/panel/polling/run-once" class="inline-form">
+            <button type="submit" class="button primary">Executar polling agora</button>
+        </form>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>polling_run_id</th>
+                    <th>http_status</th>
+                    <th>response_event_count</th>
+                    <th>new_event_count</th>
+                    <th>duplicate_event_count</th>
+                    <th>processed_event_count</th>
+                    <th>failed_event_count</th>
+                    <th>ack_success</th>
+                    <th>finished_at</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for run in runs %}
+                <tr>
+                    <td>{{ run.id }}</td>
+                    <td>{{ run.http_status or '-' }}</td>
+                    <td>{{ run.response_event_count }}</td>
+                    <td>{{ run.new_event_count }}</td>
+                    <td>{{ run.duplicate_event_count }}</td>
+                    <td>{{ run.processed_event_count }}</td>
+                    <td>{{ run.failed_event_count }}</td>
+                    <td>{{ run.ack_success }}</td>
+                    <td>{{ run.finished_at or '-' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

@@ -51,6 +51,8 @@ class Settings:
         self.polling_interval_seconds = _env_int("POLLING_INTERVAL_SECONDS", 30)
         self.polling_retry_attempts = _env_int("POLLING_RETRY_ATTEMPTS", 3)
         self.polling_retry_base_delay_seconds = _env_float("POLLING_RETRY_BASE_DELAY_SECONDS", 1.0)
+        self.orders_read_retry_attempts = _env_int("ORDERS_READ_RETRY_ATTEMPTS", 3)
+        self.orders_read_retry_base_delay_seconds = _env_float("ORDERS_READ_RETRY_BASE_DELAY_SECONDS", 1.0)
         self.orders_active_mode = _env_bool("ORDERS_ACTIVE_MODE", False)
         self.enabled_automatic_actions = {item.lower() for item in _env_list("ENABLED_AUTOMATIC_ACTIONS")} or {
             "confirm"
